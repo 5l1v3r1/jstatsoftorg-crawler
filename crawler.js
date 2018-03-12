@@ -21,13 +21,9 @@ Promise.all(proms)
 			$('h4 a', '#content').each(function(err, res, body) { //each her biri için bu functionu çalıştır demek
 				urls.push($(this).attr('href'));  
 			});
-				console.log(bodies)
+				
 		}
-		
-		/*
 		return Promise.resolve(urls)
-		
-
 	})
 	.then(function(urls) {
 		var proms = []
@@ -35,9 +31,9 @@ Promise.all(proms)
 		for(var i = 0; i < urls.length; i++){
 			proms.push(request(urls[i]));
 		}
-
+			console.log(urls)
 		return Promise.all(proms)
-	})
+	})  
 	.then(function(bodies) {
 		var urls = {}
 		var url
@@ -73,7 +69,7 @@ Promise.all(proms)
 			})
 		}
 
-		return prom */
+		return prom 
 	})
 	.catch(error => console.log("ERROR:", error))
 

@@ -3,13 +3,14 @@ const request = require('request-promise');
 const cheerio = require('cheerio');
 const work = require('./works.js')
 
+
 var urls = [];
 var contents = [];
 
 request('https://www.jstatsoft.org/issue/view/v081', (err, resp, body) =>{
 	let prom = Promise.resolve(false);
 
-
+	//request linkleri topladığı yer.
 	if(!err && resp.statusCode == 200) {
 		var $ = cheerio.load(body); 
 
@@ -21,26 +22,10 @@ request('https://www.jstatsoft.org/issue/view/v081', (err, resp, body) =>{
 			for(let i = 0; i < urls.length; i++){
 				let url = urls[i]
 				htmls.push(request(url));
-			}
+			}		
+				
 		}
-
 	}
-	var parsed = [];
-	Promise.all(htmls)
-		.then(async (contents) => {
-			for ( let i = 0; i < contents.length; i++) {
-				let content = contents[i];
-				let parse = await work(content);
-				parsed.push(parse);
-			}
-
-			return Promise.all(parsed);
-		})
-		.then(contents => {
-			for ( let i = 0; i< contents.length; i++) {
-				console.log(contents[i]);
-			}
-		})
-
- }); 
-
+	//work.js parse işlemini gerçekleştirdiği yer.
+	//await kullanılabilmesi için async fonksiyon olması gerekir.
+	
