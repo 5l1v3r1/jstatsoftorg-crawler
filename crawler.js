@@ -20,8 +20,7 @@ Promise.all(proms)
 
 			$('h4 a', '#content').each(function(err, res, body) { //each her biri için bu functionu çalıştır demek
 				urls.push($(this).attr('href'));  
-			});
-				
+			});	
 		}
 		return Promise.resolve(urls)
 	})
@@ -57,7 +56,6 @@ Promise.all(proms)
 		for(let k = 0; k < urls.length; k++){
 			let url = urls[k]
 			let name = "file-"+ k +".pdf"
-
 			prom = prom.then(() => {
 				return new Promise(function(res, rej) {
 					requestNormal(url)

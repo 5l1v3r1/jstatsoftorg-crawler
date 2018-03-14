@@ -4,22 +4,22 @@ var _ = require("lodash");
  
 var work = async (html, articleName, issueName)=>{
 	var json = {
-        Url: [],
-        Paper: [],
         doi:[],
 		List:[],
         Supplements:[],
+        articleName,
+        issueName,
 	}
 
 	var $ = cheerio.load(html)  /* Html Read */
     $('#breadcrumb a.current').each((indx, elem) => {
         var Url = _.trim($(elem).attr('href'))
-        json.Url.push(Url);
+            json.Url = Url;
     });
 
     $('#content  a.file').each((indx, elem) => {
         var paper = ($(elem).attr('href'))
-        json.Paper.push(paper);
+        json.paper = paper;
 
     });
 
@@ -42,8 +42,10 @@ var work = async (html, articleName, issueName)=>{
     var downTotal = $('#content table.data').first().find("tr").eq(4).find("td").eq(1).text()  
         var re = new RegExp(/(\d)+?(?=\))/);
         downTotal = downTotal.match(re)
-         json.downTotal = downTotal[0] * 1;  
-            
+         if(downTotal !== null) {
+            json.downTotal = downTotal[0] * 1;  
+         }
+
     
     $('#content table.data').first().find("tr").eq(1).find("td").eq(1).each((indx, elem) => {  
      	var Title = _.trim($(elem).text())
@@ -56,18 +58,21 @@ var work = async (html, articleName, issueName)=>{
      	
     });
 
-		// abstract
+		// abstract sections
     var AbstractInfo = $('#content table.data').first().find("tr").eq(3).text();
         var re = new RegExp(/((\d|-)+?(?=\.))/g);
         var PageViews = AbstractInfo.match(re);
         json.List.push(PageViews);
-        var List = {
-            PageViews: PageViews[0],
-            Submitted: PageViews[1],
-            Published: PageViews[2],
-        };
-        json.List = List; 
+        if(PageViews !== null) {
 
+            var List = {
+                PageViews: PageViews[0],
+                Submitted: PageViews[1],
+                Published: PageViews[2],
+            };
+            json.List = List; 
+        }
+        // supplements sections 
     $('#content table.supplementfiles').first().find('tr').each((indx, elem) =>{
         var filePart = $(elem)
         .find("td").eq(0)
@@ -81,18 +86,25 @@ var work = async (html, articleName, issueName)=>{
 
         var downPart = $(elem)
         .find("td").eq(1)
-
+                    
         var down = _.trim(downPart.text());
-        var re = new RegExp(/(\d+);\s(.+)/g);
+        var re = new RegExp(/(\d+);\s(.\w+)/g)
+        //var /re = new RegExp(/(\d+);\s(.+)/g);
         var downPart = down.match(re)
-        downPart = downPart[0].split(";");     
+        var size = null;
+        var downloads = null;
+        if(downPart !== null) {
+            downPart = downPart[0].split(";");
+            downloads = downPart[0] 
+            size = downPart[1] 
+        }
 
         var supplements = {
             filename: supplements[0],
             description: supplements[1],
             url: urlTag.attr("href"),
-            downloads: downPart[0],
-            size: downPart[1],
+            downloads,
+            size,
         }	 
         
         json.Supplements.push(supplements);
@@ -109,10 +121,6 @@ var work = async (html, articleName, issueName)=>{
     });
 
 
-    // create dir for this paper
-    var file = './tmp/' + articleName + '/' + issueName + '/meta.json';
-
-    fs.writeFileSync(file, JSON.stringify(json, null, 4));
     return json;
 }
 
