@@ -18,9 +18,6 @@ let download = async (url, path) => {
   .pipe(fs.createWriteStream(path))
   .on('complete', () => Promise.resolve())
   return a
-  /* Tek bir sayafada problem yok */
-  /* İf ile 83- 79 arası çekerken problem yok */
-
 }
 
 var issueUrls = {};
@@ -50,6 +47,7 @@ Promise.all(pages)
         content,
       });
       issueUrls[articleName] = [];
+      break;
     }
     return Promise.resolve(articleContents)   
 
@@ -115,7 +113,6 @@ Promise.all(pages)
       var file = articleDir + '/meta.json';
 
       fs.writeFileSync(file, JSON.stringify(contents[i], null, 4));
-
 
       //paper dosyasını indir
       var paperUrl = contents[i].paper;
