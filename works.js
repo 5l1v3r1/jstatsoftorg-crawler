@@ -2,20 +2,21 @@ const fs = require("fs");
 const cheerio = require("cheerio");
 var _ = require("lodash");
  
-var work = async (html, articleName, issueName)=>{
+var work = async html => {
 	var json = {
         doi:[],
 		List:[],
-        Supplements:[],
-        articleName,
-        issueName,
+        supplements:[],
 	}
 
 	var $ = cheerio.load(html)  /* Html Read */
+    /*
+    NOT REQUIRED
     $('#breadcrumb a.current').each((indx, elem) => {
         var Url = _.trim($(elem).attr('href'))
             json.Url = Url;
     });
+    */
 
     $('#content  a.file').each((indx, elem) => {
         var paper = ($(elem).attr('href'))
@@ -107,7 +108,7 @@ var work = async (html, articleName, issueName)=>{
             size,
         }	 
         
-        json.Supplements.push(supplements);
+        json.supplements.push(supplements);
     });
     $('#content table.data').first().find('tr').eq(8).find("td").eq(1).each((indx, elem) => { 
      	var code = _.trim($(elem).text()) 
