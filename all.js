@@ -1,147 +1,231 @@
-const request = require("request-promise");
-const fs = require("fs");
-const cheerio = require("cheerio");
-const work = require("./works.js")
-const requestNormal = require("request")
+const requestPromise     = require("request-promise");
+const fs                 = require("fs");
+const path               = require("path")
+const cheerio            = require("cheerio")
+const rimraf             = require("rimraf-promise")
+const work               = require("./works.js")
+const requestNormal      = require("request")
 
-var pages = [];
-  for(var i = 0; i < 1; i++) {
-  pages.push(request('https://www.jstatsoft.org/issue/archive?issuesPage=' + (i + 1)))
-}
+const DOWNLOAD_DIRECTORY = path.resolve("./files")
+const CACHE_FILE         = path.resolve("./cache.json")
 
-let download = async (url, path) => {
-  console.log(new Date(), url, path)
-  let a = requestNormal(url);
-  a.on("response", function() {
-    setTimeout(() => Promise.resolve(), 1000)
-  })
-  .pipe(fs.createWriteStream(path))
-  .on('complete', () => Promise.resolve())
-  return a
-}
+const REQUEST_INTERVAL   = 200  // in milliseconds
+const TOTAL_ISSUE_PAGES  = 1    // set to 4 for all
+const TOTAL_VOLUMES      = 1    // set to null for all
+const TOTAL_ARTICLES     = 10   // set to null for all
 
-var issueUrls = {};
-Promise.all(pages)
-  .then(pages => {
-    var links = [];
-    //all links gathered
-    for (var i = 0; i < pages.length; i++) {
-       var $ = cheerio.load(pages[i])
-    
-       $('h4 a', '#content').each(function () {
-        links.push($(this).attr('href'));
-      });
-       break;
-    }
-    return Promise.resolve(links)
-  })
-  .then(async links => {
-    var articleContents = [];
-    for(var i = 0; i < links.length; i++) {
-      let parsedLinks = links[i].split('/');
-      // create dir for this article
-      let articleName = parsedLinks.pop();
-      let content = await request(links[i]);
-      articleContents.push({
-        articleName,
-        content,
-      });
-      issueUrls[articleName] = [];
-      break;
-    }
-    return Promise.resolve(articleContents)   
+// Required by function request()
+var old = Promise.resolve()
 
-  }).then(articleContents => {
-    for(var i = 0; i < articleContents.length; i++) {
-      var $ = cheerio.load(articleContents[i].content)
-      //1095+ linkleri topladı
-      $('.tocTitle a', '#content').each(function () {
-        issueUrls[articleContents[i].articleName].push($(this).attr('href'));
-      });
-    }  
-    return Promise.resolve(issueUrls)
-  })
-  .then(async issueUrls => {
-    var contents = []
-    for ( let articleName in issueUrls ) {
-      let urls = issueUrls[articleName];
-      for ( let i = 0; i < urls.length; i++) {
-        let url = urls[i];
-        let parsedLinks = url.split('/');
-        // create dir for this article
-        let issueName = parsedLinks.pop();
-        let content = await request(url); 
-        contents.push({
-          articleName,
-          issueName,
-          content,
+// Empty download directory
+var proc = rimraf(DOWNLOAD_DIRECTORY)
+  .then(result => fs.mkdirSync(DOWNLOAD_DIRECTORY))
+
+// Check if cache exists. If not, create the cache file.
+if ( ! fs.existsSync(CACHE_FILE) ) {
+  proc = proc
+
+    // Get all the volumes
+    .then(() => {
+      var pages = [];
+
+      console.log(`Started to fetch volume urls in ${TOTAL_ISSUE_PAGES} pages`)
+
+      for(var i = 0; i < TOTAL_ISSUE_PAGES; i++) {
+        pages.push(request('https://www.jstatsoft.org/issue/archive?issuesPage=' + (i + 1)))
+      }
+
+      return Promise.all(pages)
+    })
+
+    // Fetch all volume urls
+    .then(pages => {
+      var links = [], $
+
+      for (var i = 0; i < pages.length; i++) {
+        $ = cheerio.load(pages[i])
+      
+        $('h4 a', '#content').each(function () {
+          links.push($(this).attr('href'));
         });
       }
+
+      return Promise.resolve(links)
+    })
+
+
+    // Fetch all volume pages
+    .then(async links => {
+      var volumes = []
+      var total = TOTAL_VOLUMES || links.length
+
+      console.log(`Started to fetch article urls in ${total} volumes`)
+
+      for (var i = 0; i < total; i++) {
+        let name = links[i].split('/').pop();
+        let content = await request(links[i]);
+
+        // Create and store volume object
+        volumes.push({
+          name,
+          content,
+          articles: [],
+        });
+      }
+
+      return Promise.resolve(volumes)   
+    })
+
+    // Fetch all article urls
+    .then(volumes => {
+      var $, volume, total
+
+      for(let i = 0; i < volumes.length; i++) {
+        total = 0
+
+        volume = volumes[i]
+        $ = cheerio.load(volumes[i].content)
+
+        // Gather all article urls (approximately 1095+ in all volumes)
+        $('.tocTitle a', '#content').each(function() {
+          if ( ! TOTAL_ARTICLES || total++ < TOTAL_ARTICLES) {
+            volume.articles.push( $(this).attr('href') );
+          }
+        });
+
+        // Remove unnecessary stuff
+        delete volume.content
+      }
+
+      return Promise.resolve(volumes)
+    })
+
+    // Fetch all article pages
+    .then(async volumes => {
+      console.log(`Started to fetch articles`)
+
+      for (let i = 0; i < volumes.length; i++) {
+        console.log(`  for volume "${volumes[i].name}"`)
+
+        // We can't use .map() here because we are already in an async
+        // function and if we create another one await will be assigned
+        // to that new async function
+        for (let j = 0; j < volumes[i].articles.length; j++) {
+          let url = volumes[i].articles[j]
+          let name = url.split('/').pop()
+          let content = await request(url)
+          let data = await work(content)
+
+          volumes[i].articles[j] = { url, name, ...data, volume: volumes[i].name }
+
+          console.log(`    article "${name}" has fetched`)
+        }
+      }
+
+      fs.writeFileSync(CACHE_FILE, JSON.stringify(volumes))
+      console.log("Cache file is created\n")
+
+      return Promise.resolve(volumes)
+    })
+}
+
+
+// Continue to create files after cache file is created.
+proc
+
+  // Read the cache
+  .then(() => Promise.resolve(JSON.parse(fs.readFileSync(CACHE_FILE))))
+
+  // Download all necessary files of the articles
+  // and save the created json
+  .then(async volumes => {
+    console.log("Started to download files and create meta datas")
+
+    for (let i = 0; i < volumes.length; i++) {
+      let volume = volumes[i]
+      let volDir = DOWNLOAD_DIRECTORY + "/" + volume.name
+
+      console.log(`  for volume "${volume.name}"`)
+
+      // Create volume directory
+      fs.mkdirSync(volDir)
+
+      for (let j = 0; j < volume.articles.length; j++) {
+        let article = volume.articles[j]
+        let dir = volDir + "/" + article.name
+
+        console.log(`    for article "${article.name}"`)
+
+        // Create article directory
+        fs.mkdirSync(dir)
+
+        // Create supplements directory for this article
+        fs.mkdirSync(dir + "/supplements")
+
+        // Create json file
+        fs.writeFileSync(dir + "/meta.json", JSON.stringify(article, null, 4))
+        console.log("      meta.json created")
+
+        // Download the actual paper (pdf of the article)
+        if (article.paper) {
+          await download(article.paper, dir + "/" + article.paper.split("/").pop())
+          console.log("      paper downloaded")
+        }
+
+        // Download data files, example codes etc... (supplements)
+        if (article.supplements.length) {
+          for (let k = 0; k < article.supplements.length; k++) {
+            let supplement = article.supplements[k]
+            await download(supplement.url, dir + "/supplements/" + supplement.filename)
+          }
+
+          console.log(`      ${article.supplements.length} supplement file downloaded`)
+        }
+      }
     }
-    return Promise.resolve(contents)
   })
-  .then((contents) => {
-    var parsed = []
-    for ( let i = 0; i < contents.length; i++) {
-      let parse = work(contents[i].content, contents[i].articleName, contents[i].issueName);
-      parsed.push(parse);
-    }
 
-    return Promise.all(parsed);
-  })
-  .then((contents) => {
-    let downloads = [];
-    var prom = false;
-    for(var i = 0; i < contents.length; i++){
-      let articleName = contents[i].articleName;
-      let issueName = contents[i].issueName;
-      //makale dizinini oluşturur
-      var articleDir = './tmp/' + articleName;
-
-      if (!fs.existsSync(articleDir)){
-        fs.mkdirSync(articleDir);
-      }
-      //makaleye ait bildiri dizinini oluşturur
-      articleDir = './tmp/' + articleName + '/' + issueName ; //dir created 
-      if (!fs.existsSync(articleDir)){
-        fs.mkdirSync(articleDir);
-      }
-      else if (fs.existsSync(articleDir+'/meta.json')) {
-        continue 
-      }
-      // meta.json dosyasını oluşturur.
-      var file = articleDir + '/meta.json';
-
-      fs.writeFileSync(file, JSON.stringify(contents[i], null, 4));
-
-      //paper dosyasını indir
-      var paperUrl = contents[i].paper;
-      var paperUrlParts =  paperUrl.split("/");
-      var fileName = paperUrlParts.pop(); //get the last element
-
-      var filePath = articleDir + "/" + fileName; //pdf download create
-      downloads.push(download(paperUrl, filePath));
-
-      //supplements dizinini oluşturur.
-      var supplementsDir = articleDir + '/supplements';
-
-      if (!fs.existsSync(supplementsDir)){
-        fs.mkdirSync(supplementsDir);
-      }
-      
-      //files in supplements downloaded and created.
-      var supplements = contents[i].Supplements;
-      for(var j = 0; j < supplements.length; j++){
-        var supFileUrl = supplements[j].url;   
-        fileName = supplements[j].filename;
-        filePath = supplementsDir + "/" +  fileName;
-        setTimeout(async () => {
-          let file = await download(supFileUrl, filePath)
-          downloads.push(file)
-        }, 5000);
-      }
-    }
-    return Promise.all(downloads);
-  })
   .catch(err=> console.log('err:', err.message))
 
+
+/**
+ * Downloads the file from the given url, saves it
+ * to given path. Sets a timeout to resolve the promise.
+ * @param  {String}  url  URL to download
+ * @param  {String}  path Path to save
+ * @return {Promise}
+ */
+function download(url, path) {
+  return new Promise((res, rej) => {
+    requestNormal(url)
+      .on("response", () => setTimeout(() => res(path), REQUEST_INTERVAL))
+      .on("error", err => setTimeout(() => rej(err), REQUEST_INTERVAL))
+      .pipe(fs.createWriteStream(path))
+  })
+}
+
+/**
+ * Makes a request with "request-promise" package.
+ * Queues the requests and sets a timeout for each.
+ * @param  {String}  url URL to make the request
+ * @return {Promise}
+ */
+function request(url) {
+  var newProm = new Promise((res, rej) => {
+    old.then(() => {
+      reqProm = requestPromise(url)
+
+      setTimeout(
+        () => {
+          reqProm.then((...args) => res(...args))
+            // Uncomment for debug:
+            // .then(() => console.log(url))
+            .catch((...args) => rej(...args))
+        },
+        REQUEST_INTERVAL
+      )
+    })
+  })
+
+  return old = newProm
+}
